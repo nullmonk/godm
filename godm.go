@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"golang.org/x/text/encoding/unicode"
@@ -24,6 +25,11 @@ const (
 	UserAgent = "OverDrive Media Console" // same user agent as mobile app
 )
 
+type LicenseFile struct {
+	SignedInfo struct {
+		ClientID string
+	}
+}
 type Metadata struct {
 	ContentType  string
 	Title        string
@@ -55,7 +61,7 @@ func (m Metadata) GetFolderName() string {
 
 type Part struct {
 	Number   string `xml:"number,attr"`
-	FileSize string `xml:"filesize,attr"`
+	FileSize int    `xml:"filesize,attr"`
 	Name     string `xml:"name,attr"`
 	FileName string `xml:"filename,attr"`
 }
@@ -97,6 +103,9 @@ type OverDriveMedia struct {
 	Metadata       string `xml:",chardata"`
 	EarlyReturnURL string
 	TransactionID  string
+
+	data     []byte
+	filename string
 }
 
 func (o *OverDriveMedia) GetMetadata() (*Metadata, error) {
@@ -119,6 +128,12 @@ func (o *OverDriveMedia) GenHash() string {
 func (o *OverDriveMedia) GetLicense(outfile string) (string, error) {
 	if data, err := ioutil.ReadFile(outfile); err == nil {
 		o.License.License = string(data)
+		lf := &LicenseFile{}
+		err = xml.Unmarshal(data, &lf)
+		if err != nil {
+			return "", err
+		}
+		o.ClientID = lf.SignedInfo.ClientID
 		fmt.Println("Using cache")
 		return string(data), nil
 	}
@@ -182,7 +197,7 @@ func (o *OverDriveMedia) chooseBestFormat() Format {
 }
 
 /* Download all the parts */
-func (o *OverDriveMedia) Download(outdir string) error {
+func (o *OverDriveMedia) Download(outdir string, threads int) error {
 	md, _ := o.GetMetadata()
 	outdir = filepath.Join(outdir, md.GetFolderName())
 	if err := os.MkdirAll(outdir, 0755); err != nil {
@@ -195,6 +210,20 @@ func (o *OverDriveMedia) Download(outdir string) error {
 		return fmt.Errorf("could not get download url")
 	}
 
+	dataChan := make(chan data)
+	errChan := make(chan error)
+	wg := &sync.WaitGroup{}
+	for i := 0; i < threads; i++ {
+		go worker(wg, dataChan, errChan)
+		wg.Add(1)
+	}
+	f, err := os.Create(filepath.Join(outdir, o.filename))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	f.Write(o.data)
+
 	for _, part := range format.Parts.Part {
 		r, err := http.NewRequest("GET", url+"/"+part.FileName, nil)
 		if err != nil {
@@ -205,12 +234,68 @@ func (o *OverDriveMedia) Download(outdir string) error {
 		r.Header.Set("License", o.License.License)
 		filenameParts := strings.Split(part.FileName, "-")
 		filename := filenameParts[len(filenameParts)-1]
-		fmt.Println(filepath.Join(outdir, filename))
-		fmt.Println(url, part.FileName)
-	}
-	return nil
+		filename = filepath.Join(outdir, filename)
+		if s, err := os.Stat(filename); err == nil {
+			if s.Size() == int64(part.FileSize) {
+				continue
+			}
+		}
 
+		dataChan <- data{
+			f: filename,
+			r: r,
+		}
+	}
+
+	albumArt := filepath.Join(outdir, "folder.jpg")
+	if i, err := os.Stat(albumArt); err == nil && i.Size() != 0 {
+		// Already have it
+	} else {
+		r, err := http.NewRequest("GET", md.CoverUrl, nil)
+		if err != nil {
+			return err
+		}
+		dataChan <- data{
+			f: albumArt,
+			r: r,
+		}
+	}
+
+	close(dataChan)
+	wg.Wait()
+	return nil
 }
+
+type data struct {
+	r *http.Request
+	f string
+}
+
+func worker(wg *sync.WaitGroup, c chan data, e chan error) {
+	defer wg.Done()
+	client := http.Client{}
+	for d := range c {
+		f, err := os.Create(d.f)
+		if err != nil {
+			e <- err
+			continue
+		}
+
+		resp, err := client.Do(d.r)
+		if err != nil {
+			e <- err
+			continue
+		}
+
+		_, err = io.Copy(f, resp.Body)
+		if err != nil {
+			e <- err
+			continue
+		}
+		client.Do(d.r)
+	}
+}
+
 func (o *OverDriveMedia) Dump() {
 	//fmt.Println("Title:", o.Metadata.Title)
 	fmt.Println("Media ID:", o.Id)
@@ -229,8 +314,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	odm.data = data
+	odm.filename = os.Args[1]
+
+	output := "extract"
 	odm.GetLicense(os.Args[1] + ".license")
-	if err := odm.Download("extract"); err != nil {
+	if err := odm.Download(output, 5); err != nil {
 		log.Fatal(err)
 	}
 }
