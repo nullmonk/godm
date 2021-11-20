@@ -8,4 +8,4 @@ RUN go mod tidy
 RUN go build cmd/godm.go
 
 EXPOSE 8080/tcp
-CMD ["/app/godm", "server", "--address=':8080'", "/app/output"]
+CMD ["/app/godm", "server", "--address=:8080", "/app/output"]
