@@ -92,7 +92,7 @@ func (s *Server) Run() error {
 	routes.HandleFunc("/", s.index)
 	routes.HandleFunc("/upload", s.upload)
 
-	log.Println("Serving HTTP on", s.Address, "saving to", s.Outdir)
+	log.Println("Serving HTTP on", s.Address, "with prefix", s.Prefix, "saving to", s.Outdir)
 	if len(s.Prefix) != 0 {
 		prefix := http.StripPrefix(s.Prefix, routes)
 		return http.ListenAndServe(s.Address, prefix)
