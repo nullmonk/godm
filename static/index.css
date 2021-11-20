@@ -1,0 +1,50 @@
+#dropbox {
+    width: 40%;
+    min-width: 400px;
+    height: 80%;
+    min-height: 400px;
+    background: rgba(105, 168, 187, 0.582);
+    padding: 0px;
+    margin: 5% auto 0;
+    border: 5px dashed #cfd5ff;
+    border-radius: 3em;
+    align-items:center;
+    justify-content:center;
+    display: flex;
+}
+#dropbox.hover{
+    background: rgba(171, 212, 224, 0.747);
+}
+
+div.vertical {
+    font-family: Helvetica, sans-serif;
+    font-weight: bold;
+    font-size: 2em;
+    color: white;
+    text-transform: uppercase;
+}
+
+body {
+    background-color: #131313;
+    background-image: linear-gradient(30deg, #1f1f22 12%, transparent 12.5%, transparent 87%, #1f1f22 87.5%, #1f1f22),
+    linear-gradient(150deg, #1f1f22 12%, transparent 12.5%, transparent 87%, #1f1f22 87.5%, #1f1f22),
+    linear-gradient(30deg, #1f1f22 12%, transparent 12.5%, transparent 87%, #1f1f22 87.5%, #1f1f22),
+    linear-gradient(150deg, #1f1f22 12%, transparent 12.5%, transparent 87%, #1f1f22 87.5%, #1f1f22),
+    linear-gradient(60deg, #2c2c31 25%, transparent 25.5%, transparent 75%, #2c2c31 75%, #2c2c31),
+    linear-gradient(60deg, #2c2c31 25%, transparent 25.5%, transparent 75%, #2c2c31 75%, #2c2c31);
+    background-size:80px 140px;
+    background-position: 0 0, 0 0, 40px 70px, 40px 70px, 0 0, 40px 70px;
+    margin: 0px;
+    padding: 0px;
+}
+
+#odmUpload {
+    display: none;
+}
+
+.container {
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    padding: 1em;
+}
