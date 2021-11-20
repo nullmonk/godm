@@ -1,7 +1,9 @@
 package godm
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -9,10 +11,14 @@ import (
 	"sync"
 )
 
+//go:embed static/*
+var Files embed.FS
+var Templates = template.Must(template.ParseFS(Files, "static/*.html"))
+
 type App struct {
 	Download Download `cmd help:"Download the ODM file contents"`
 	Return   Return   `cmd help:"Return the ODM file"`
-	Server   Serve    `cmd help:"Serve a website to automatically download books"`
+	Server   Server   `cmd help:"Serve a website to automatically download books"`
 }
 
 type Download struct {
@@ -57,19 +63,42 @@ func (r *Return) Run() error {
 	return odm.Return()
 }
 
-type Serve struct {
-	Address string `short:"a" help:"Address to listen on" default:":8080"`
-	Outdir  string `arg help:"out directory to save files to"`
+type Server struct {
+	Address string `short:"a" help:"Address to listen on (env GODM_ADDR)" default:":8080"`
+	Prefix  string `short:"p" help:"URL prefix to use (env GODM_PREFIX)"`
+	Outdir  string `arg help:"out directory to save files to (env GODM_OUTDIR)"`
 }
 
-func (s *Serve) Run() error {
-	staticAssets := http.FileServer(http.Dir("static/"))
-	http.Handle("/static/", http.StripPrefix("/static/", staticAssets))
-	http.HandleFunc("/", index)
-	http.HandleFunc("/upload", upload)
+func (s *Server) Run() error {
+	if pr := os.Getenv("GODM_PREFIX"); pr != "" {
+		s.Prefix = pr
+	}
+	if ad := os.Getenv("GODM_ADDR"); ad != "" {
+		s.Address = ad
+	}
+	if outdir := os.Getenv("GODM_OUTDIR"); outdir != "" {
+		s.Outdir = outdir
+	}
+
+	if len(s.Prefix) != 0 && s.Prefix[0] != '/' {
+		return fmt.Errorf("URL prefix does not begin with '/'")
+	}
+
+	routes := http.NewServeMux()
+
+	//staticAssets := http.FileServer(http.Dir("static/"))
+	//routes.Handle("/static/", http.StripPrefix("/static/", staticAssets))
+	routes.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(Files))))
+	routes.HandleFunc("/", s.index)
+	routes.HandleFunc("/upload", s.upload)
+
 	log.Println("Serving HTTP on", s.Address, "saving to", s.Outdir)
-	http.ListenAndServe(s.Address, nil)
-	return nil
+	if len(s.Prefix) != 0 {
+		prefix := http.StripPrefix(s.Prefix, routes)
+		return http.ListenAndServe(s.Address, prefix)
+	} else {
+		return http.ListenAndServe(s.Address, routes)
+	}
 }
 
 type data struct {

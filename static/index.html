@@ -4,8 +4,8 @@
     <title>Overdrive ODM Upload</title>
     </head>
 <body>
-    <link rel="stylesheet" href="./static/index.css"/>
-    <script src="./static/upload.js"></script>
+    <link rel="stylesheet" href="{{.}}/static/index.css"/>
+    <script src="{{.}}/static/upload.js"></script>
     
     <div class="container">
         <div id="dropbox">
@@ -17,7 +17,7 @@
     
     <div id="statistics"></div>
     
-    <form id="odmUpload" action="/upload" method="post" enctype="multipart/form-data">
+    <form id="odmUpload" action="{{.}}/upload" method="post" enctype="multipart/form-data">
         <input type="file" name="odmFile" accept="text/*" required>
         <input type="submit" value="Upload File">
     </form>
