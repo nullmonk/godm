@@ -95,7 +95,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte(err.Error()))
-		log.Println(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, err)
+		log.Println(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, "invalid ODM file:", err)
 		return
 	}
 	if odm.Id == "" || odm.License.AcquisitionUrl == "" {
@@ -118,25 +118,43 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	if err != nil {
 		return
 	}
+	defer log.Close()
+	logChan := make(chan string)
+	wg2 := &sync.WaitGroup{}
+	go func(wg *sync.WaitGroup, logs chan string, f io.Writer) {
+		defer wg.Done()
+		for l := range logs {
+			fmt.Fprintf(f, "%+v %s\n", time.Now(), l)
+			fmt.Printf("%+v\n %s\n", time.Now(), l)
+		}
+	}(wg2, logChan, log)
+	wg2.Add(1)
 
 	md, _ := o.GetMetadata()
+	logChan <- fmt.Sprintf("LOG: Starting download for %s", md.Title)
 	outdir := filepath.Join(s.Outdir, md.GetFolderName())
 	if err := os.MkdirAll(outdir, 0755); err != nil {
-		fmt.Fprintf(log, "ERR: Could not make directory: %s", err)
+		logChan <- fmt.Sprintf("ERR: Could not make directory: %s", err)
+		close(logChan)
+		wg2.Wait()
 		return
 	}
 
 	format := o.chooseBestFormat()
 	url := o.getDownloadUrl(format)
 	if url == "" {
-		fmt.Fprintf(log, "ERR: could not get download url")
+		logChan <- "ERR: could not get download url"
+		close(logChan)
+		wg2.Wait()
 		return
 	}
 	if _, err := o.GetLicense(); err != nil {
-		fmt.Fprintf(log, "ERR: Could not get license: %s", err)
+		logChan <- fmt.Sprintf("ERR: Could not get license: %s", err)
+		close(logChan)
+		wg2.Wait()
 		return
 	}
-	fmt.Fprintf(log, "LOG: Downloaded license file")
+	logChan <- fmt.Sprintf("LOG: Downloaded license file")
 
 	type d struct {
 		outfile string
@@ -144,7 +162,6 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	}
 
 	dataChan := make(chan d)
-	logChan := make(chan string)
 
 	wg := &sync.WaitGroup{}
 	for i := 0; i < 10; i++ {
@@ -160,16 +177,6 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 		}(wg, dataChan, logChan)
 		wg.Add(1)
 	}
-
-	wg2 := &sync.WaitGroup{}
-	go func(wg *sync.WaitGroup, logs chan string, f io.Writer) {
-		defer wg.Done()
-		for l := range logs {
-			fmt.Fprintf(f, "%+v %s\n", time.Now(), l)
-			fmt.Printf("%+v\n %s\n", time.Now(), l)
-		}
-	}(wg2, logChan, log)
-	wg2.Add(1)
 
 	for _, part := range o.chooseBestFormat().Parts.Part {
 		filenameParts := strings.Split(part.FileName, "-")
