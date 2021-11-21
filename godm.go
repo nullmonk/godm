@@ -95,9 +95,9 @@ func (s *Server) Run() error {
 	log.Println("Serving HTTP on", s.Address, "with prefix", s.Prefix, "saving to", s.Outdir)
 	if len(s.Prefix) != 0 {
 		prefix := http.StripPrefix(s.Prefix, routes)
-		return http.ListenAndServe(s.Address, prefix)
+		return http.ListenAndServe(s.Address, logRequest(prefix))
 	} else {
-		return http.ListenAndServe(s.Address, routes)
+		return http.ListenAndServe(s.Address, logRequest(routes))
 	}
 }
 
