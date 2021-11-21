@@ -27,7 +27,7 @@ var upload = {
                 e.preventDefault();
                 e.stopPropagation();
                 upload.dropbox.classList.remove('hover');
-                upload.queue(e.dataTransfer.files);
+                upload.form.submit()
             });
         }
 
