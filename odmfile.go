@@ -121,6 +121,9 @@ func NewODMFile(filename string) (*OverDriveMedia, error) {
 	if err != nil {
 		return nil, err
 	}
+	if odm.Id == "" || odm.License.AcquisitionUrl == "" {
+		return nil, fmt.Errorf("invalid ODM file")
+	}
 	odm.data = data
 	odm.filename = filename
 	return odm, nil
