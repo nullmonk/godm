@@ -74,6 +74,12 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	// Split the filepath just to be safe
 	_, fname := filepath.Split(header.Filename)
 	outfile := filepath.Join("odms", fname)
+
+	// Check if we have already downloaded this book
+	if i, err := os.Stat(outfile + ".log"); err == nil && i.Size() > 0 {
+		http.Redirect(w, r, s.Prefix+"/status?id="+fname, http.StatusTemporaryRedirect)
+		return
+	}
 	f, err := os.Create(outfile)
 	if err != nil {
 		w.WriteHeader(http.StatusNotAcceptable)
@@ -145,7 +151,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 
 	md, _ := o.GetMetadata()
 	logChan <- fmt.Sprintf("LOG: Starting download for %s", md.Title)
-	outdir := filepath.Join(s.Outdir, md.GetFolderName())
+	outdir := filepath.Join(s.Outdir, md.Title)
 	if err := os.MkdirAll(outdir, 0755); err != nil {
 		logChan <- fmt.Sprintf("ERR: Could not make directory: %s", err)
 		close(logChan)
@@ -226,7 +232,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	if count != len(o.chooseBestFormat().Parts.Part) {
 		logChan <- "ERR: Book validation failed. No returning. Please contact administrator"
 	} else {
-		logChan <- "Book successfully downloaded. Returning"
+		logChan <- "Book successfully downloaded. Returning."
 	}
 	o.Return()
 	close(logChan)
