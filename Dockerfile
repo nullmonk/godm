@@ -1,16 +1,13 @@
 FROM golang:alpine
 
 RUN apk update && apk add git
-#RUN git clone https://github.com/micahjmartin/godm.git /app
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod tidy
-
-COPY static .
-COPY cmd .
+COPY static/ static/
+COPY cmd/ cmd/
 COPY *.go ./
 COPY index.html .
-
+RUN go mod tidy
 RUN go build cmd/godm.go
 
 EXPOSE 8080/tcp
