@@ -127,14 +127,17 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	wg2 := &sync.WaitGroup{}
 	go func(wg *sync.WaitGroup, logs chan string, filename string) {
 		defer wg.Done()
-		logf, err := os.OpenFile(filename+".log", os.O_CREATE|os.O_APPEND, 0644)
+		logf, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Println("Error opening logfile:", err)
 			return
 		}
 		defer logf.Close()
 		for l := range logs {
-			fmt.Fprintf(logf, "%+v %s\n", time.Now(), l)
+			n, err := fmt.Fprintf(logf, "%+v %s\n", time.Now(), l)
+			if err != nil {
+				fmt.Println("FATAL:", err, n)
+			}
 			fmt.Printf("%+v %s\n", time.Now(), l)
 		}
 	}(wg2, logChan, o.filename+".log")
@@ -182,7 +185,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 					logChan <- fmt.Sprintf("ERR: Could not download part %s: %s", data.p.Number, err)
 					continue
 				}
-				logChan <- fmt.Sprintf("LOG: Saving part %s", data.p.Number)
+				logChan <- fmt.Sprintf("LOG: Saved part %s", data.p.Number)
 			}
 		}(wg, dataChan, logChan)
 		wg.Add(1)

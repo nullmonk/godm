@@ -237,7 +237,15 @@ func (o *OverDriveMedia) chooseBestFormat() Format {
 }
 
 func (o *OverDriveMedia) Return() error {
-	_, err := http.Get(o.EarlyReturnURL)
+	resp, err := http.Get(o.EarlyReturnURL)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code mismatch %d != 200", resp.StatusCode)
+	}
+	io.Copy(os.Stdout, resp.Body)
+	fmt.Println()
 	return err
 }
 
