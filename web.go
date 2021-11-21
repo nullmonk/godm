@@ -16,11 +16,13 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
 	_, header, err := r.FormFile("odmFile")
 	if err != nil {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte(err.Error()))
+		return
 	}
 
 	log := fmt.Sprintf("Got file: %s %s", header.Filename, header.Header)
