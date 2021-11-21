@@ -32,7 +32,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b, err := ioutil.ReadFile(fname + ".log")
+	b, err := ioutil.ReadFile("odms/" + fname + ".log")
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(err.Error()))
@@ -106,6 +106,14 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	odm.filename = outfile
+	lf, err := os.Create(odm.filename + ".log")
+	if err != nil {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(err.Error()))
+		log.Println(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, err)
+		return
+	}
+	lf.Close()
 	go s.DownloadForWeb(odm)
 
 	http.Redirect(w, r, s.Prefix+"/status?id="+fname, http.StatusTemporaryRedirect)
@@ -114,20 +122,22 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 /* Download the ODM file, logging output and threading the file */
 func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	// Logfile
-	log, err := os.OpenFile(o.filename+".log", os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return
-	}
-	defer log.Close()
+
 	logChan := make(chan string)
 	wg2 := &sync.WaitGroup{}
-	go func(wg *sync.WaitGroup, logs chan string, f io.Writer) {
+	go func(wg *sync.WaitGroup, logs chan string, filename string) {
 		defer wg.Done()
-		for l := range logs {
-			fmt.Fprintf(f, "%+v %s\n", time.Now(), l)
-			fmt.Printf("%+v\n %s\n", time.Now(), l)
+		logf, err := os.OpenFile(filename+".log", os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Println("Error opening logfile:", err)
+			return
 		}
-	}(wg2, logChan, log)
+		defer logf.Close()
+		for l := range logs {
+			fmt.Fprintf(logf, "%+v %s\n", time.Now(), l)
+			fmt.Printf("%+v %s\n", time.Now(), l)
+		}
+	}(wg2, logChan, o.filename+".log")
 	wg2.Add(1)
 
 	md, _ := o.GetMetadata()
@@ -154,7 +164,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 		wg2.Wait()
 		return
 	}
-	logChan <- fmt.Sprintf("LOG: Downloaded license file")
+	logChan <- "LOG: Downloaded license file"
 
 	type d struct {
 		outfile string
