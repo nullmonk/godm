@@ -127,7 +127,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	wg2 := &sync.WaitGroup{}
 	go func(wg *sync.WaitGroup, logs chan string, filename string) {
 		defer wg.Done()
-		logf, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND, 0644)
+		logf, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Println("Error opening logfile:", err)
 			return
@@ -209,6 +209,26 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 
 	close(dataChan)
 	wg.Wait()
+
+	count := 0
+	for _, p := range o.chooseBestFormat().Parts.Part {
+		filenameParts := strings.Split(p.FileName, "-")
+		filename := filenameParts[len(filenameParts)-1]
+		filename = filepath.Join(outdir, filename)
+		if s, err := os.Stat(filename); err == nil {
+			if s.Size() == int64(p.FileSize) {
+				count++
+			} else {
+				logChan <- fmt.Sprintf("ERR: Missing part %s", p.Number)
+			}
+		}
+	}
+	if count != len(o.chooseBestFormat().Parts.Part) {
+		logChan <- "ERR: Book validation failed. No returning. Please contact administrator"
+	} else {
+		logChan <- "Book successfully downloaded. Returning"
+	}
+	o.Return()
 	close(logChan)
 	wg2.Wait()
 }

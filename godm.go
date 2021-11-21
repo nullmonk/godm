@@ -89,9 +89,7 @@ func (s *Server) Run() error {
 		return fmt.Errorf("URL prefix does not begin with '/'")
 	}
 
-	if err := os.Mkdir("odms", 0755); err != nil {
-		return fmt.Errorf("cannot make tempory output directory: %s", err)
-	}
+	os.Mkdir("odms", 0755)
 
 	routes := http.NewServeMux()
 	routes.Handle("/static/", http.FileServer(http.FS(Files)))
