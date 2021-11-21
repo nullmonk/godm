@@ -97,6 +97,7 @@ func (s *Server) Run() error {
 	routes.Handle("/static/", http.FileServer(http.FS(Files)))
 	routes.HandleFunc("/", s.index)
 	routes.HandleFunc("/upload", s.upload)
+	routes.HandleFunc("/status", s.status)
 	lggr := logRequest(routes)
 	log.Println("Serving HTTP on", s.Address, "with prefix", s.Prefix, "saving to", s.Outdir)
 	if len(s.Prefix) != 0 {

@@ -119,7 +119,7 @@ func NewODMFile(filename string) (*OverDriveMedia, error) {
 	odm := &OverDriveMedia{}
 	err = xml.Unmarshal([]byte(data), &odm)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid ODM file: %s", err)
 	}
 	if odm.Id == "" || odm.License.AcquisitionUrl == "" {
 		return nil, fmt.Errorf("invalid ODM file")
@@ -241,19 +241,23 @@ func (o *OverDriveMedia) Return() error {
 	return err
 }
 
-func (o *OverDriveMedia) DownloadPart(p Part) (io.Reader, error) {
+func (o *OverDriveMedia) DownloadPart(p Part, outfile string) error {
+	outf, err := os.Create(outfile)
+	if err != nil {
+		return err
+	}
 	license, err := o.GetLicense()
 	if err != nil {
-		return nil, fmt.Errorf("could not get license")
+		return fmt.Errorf("could not get license")
 	}
 	format := o.chooseBestFormat()
 	url := o.getDownloadUrl(format)
 	if url == "" {
-		return nil, fmt.Errorf("could not get download url")
+		return fmt.Errorf("could not get download url")
 	}
 	r, err := http.NewRequest("GET", url+"/"+p.FileName, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	r.Header.Set("User-Agent", UserAgent)
 	r.Header.Set("ClientID", o.ClientID)
@@ -261,17 +265,16 @@ func (o *OverDriveMedia) DownloadPart(p Part) (io.Reader, error) {
 	client := http.Client{}
 	resp, err := client.Do(r)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code received: %d", resp.StatusCode)
+		return fmt.Errorf("invalid status code received: %d", resp.StatusCode)
 	}
-	b := new(bytes.Buffer)
-	_, err = io.Copy(b, resp.Body)
+	_, err = io.Copy(outf, resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return b, nil
+	return nil
 }
 
 /* Download all the parts */
