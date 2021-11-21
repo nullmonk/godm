@@ -13,7 +13,10 @@ import (
 
 //go:embed static/*
 var Files embed.FS
-var Templates = template.Must(template.ParseFS(Files, "static/*.html"))
+
+//go:embed index.html
+var index string
+var Templates = template.Must(template.New("").Parse(index))
 
 type App struct {
 	Download Download `cmd help:"Download the ODM file contents"`
@@ -88,16 +91,16 @@ func (s *Server) Run() error {
 
 	//staticAssets := http.FileServer(http.Dir("static/"))
 	//routes.Handle("/static/", http.StripPrefix("/static/", staticAssets))
-	routes.Handle("/static/", http.FileServer(http.FS(Files)))
+	routes.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(Files))))
 	routes.HandleFunc("/", s.index)
 	routes.HandleFunc("/upload", s.upload)
-
+	lggr := logRequest(routes)
 	log.Println("Serving HTTP on", s.Address, "with prefix", s.Prefix, "saving to", s.Outdir)
 	if len(s.Prefix) != 0 {
-		prefix := http.StripPrefix(s.Prefix, routes)
-		return http.ListenAndServe(s.Address, logRequest(prefix))
+		prefix := http.StripPrefix(s.Prefix, lggr)
+		return http.ListenAndServe(s.Address, prefix)
 	} else {
-		return http.ListenAndServe(s.Address, logRequest(routes))
+		return http.ListenAndServe(s.Address, lggr)
 	}
 }
 
