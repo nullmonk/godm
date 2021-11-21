@@ -2,8 +2,7 @@ package godm
 
 import (
 	"bytes"
-	"crypto/sha1"
-	"encoding/hex"
+	"encoding/xml"
 	"io"
 	"log"
 	"net/http"
@@ -59,18 +58,29 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	// Write to the outfile, the in memory buffer, and the hasher all at once
-	hasher := sha1.New()
 	b := new(bytes.Buffer)
-	if _, err := io.Copy(io.MultiWriter(f, b, hasher), file); err != nil {
+	if _, err := io.Copy(io.MultiWriter(f, b), file); err != nil {
 		w.WriteHeader(http.StatusNotAcceptable)
 		w.Write([]byte(err.Error()))
 		log.Print(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, err)
 		return
 	}
-
-	hash := hex.EncodeToString(hasher.Sum(nil))
-	os.Rename(outfile, hash+".odm")
-	http.Redirect(w, r, s.Prefix+"/status?id="+hash, http.StatusTemporaryRedirect)
+	odm := &OverDriveMedia{}
+	err = xml.Unmarshal([]byte(b.Bytes()), &odm)
+	if err != nil {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(err.Error()))
+		log.Print(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, err)
+		return
+	}
+	if odm.Id == "" || odm.License.AcquisitionUrl == "" {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(err.Error()))
+		log.Print(r.RemoteAddr, r.RequestURI, http.StatusNotAcceptable, "invalid ODM file")
+		return
+	}
+	odm.filename = outfile
+	http.Redirect(w, r, s.Prefix+"/status?id="+fname, http.StatusTemporaryRedirect)
 }
 
 func logRequest(handler http.Handler) http.Handler {
