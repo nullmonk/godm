@@ -1,6 +1,7 @@
 package godm
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 )
@@ -16,7 +17,14 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
-	w.WriteHeader(http.StatusServiceUnavailable)
+	_, header, err := r.FormFile("odmFile")
+	if err != nil {
+		w.WriteHeader(http.StatusNotAcceptable)
+		w.Write([]byte(err.Error()))
+	}
+
+	log := fmt.Sprintf("Got file: %s %s", header.Filename, header.Header)
+	w.Write([]byte(log))
 }
 
 func logRequest(handler http.Handler) http.Handler {
