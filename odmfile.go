@@ -62,14 +62,16 @@ func (m Metadata) GetFolderName() string {
 	return strings.ReplaceAll(fmt.Sprintf("%s_%s", m.GetAuthor(), m.Title), " ", "")
 }
 
+type Part struct {
+	Number   string `xml:"number,attr"`
+	FileSize int    `xml:"filesize,attr"`
+	Name     string `xml:"name,attr"`
+	FileName string `xml:"filename,attr"`
+}
+
 type Parts struct {
 	Count int `xml:"count,attr"`
-	Part  []struct {
-		Number   string `xml:"number,attr"`
-		FileSize int    `xml:"filesize,attr"`
-		Name     string `xml:"name,attr"`
-		FileName string `xml:"filename,attr"`
-	}
+	Part  []Part
 }
 
 type Formats struct {
@@ -236,8 +238,41 @@ func (o *OverDriveMedia) Return() error {
 	return err
 }
 
+func (o *OverDriveMedia) DownloadPart(p Part) (io.Reader, error) {
+	license, err := o.GetLicense()
+	if err != nil {
+		return nil, fmt.Errorf("could not get license")
+	}
+	format := o.chooseBestFormat()
+	url := o.getDownloadUrl(format)
+	if url == "" {
+		return nil, fmt.Errorf("could not get download url")
+	}
+	r, err := http.NewRequest("GET", url+"/"+p.FileName, nil)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("User-Agent", UserAgent)
+	r.Header.Set("ClientID", o.ClientID)
+	r.Header.Set("License", license)
+	client := http.Client{}
+	resp, err := client.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("invalid status code received: %d", resp.StatusCode)
+	}
+	b := new(bytes.Buffer)
+	_, err = io.Copy(b, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
 /* Download all the parts */
-func (o *OverDriveMedia) Download(outdir string, threads int) error {
+func (o *OverDriveMedia) Download(outdir string, threads int, verbose bool) error {
 	// Make sure we have the license
 	license, err := o.GetLicense()
 	if err != nil {
@@ -259,7 +294,7 @@ func (o *OverDriveMedia) Download(outdir string, threads int) error {
 	errChan := make(chan error)
 	wg := &sync.WaitGroup{}
 	for i := 0; i < threads; i++ {
-		go worker(wg, dataChan, errChan)
+		go worker(wg, dataChan, errChan, verbose)
 		wg.Add(1)
 	}
 	f, err := os.Create(filepath.Join(outdir, o.filename))

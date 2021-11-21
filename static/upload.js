@@ -1,3 +1,13 @@
+function errorMessage(el, msg) {
+    var originalMsg = el.innerHTML
+    el.innerHTML = msg
+    el.classList.add("error")
+    setTimeout(e=>{
+        el.classList.remove("error")
+        el.innerHTML = originalMsg
+    }, 20000)
+}
+
 var upload = {
     dropbox: null, // HTML upload zone
     stats: null, // HTML upload status
@@ -27,6 +37,21 @@ var upload = {
                 e.preventDefault();
                 e.stopPropagation();
                 upload.dropbox.classList.remove('hover');
+                var data = e.dataTransfer, files = data.files;
+                if (files.length > 1) {
+                    errorMessage(upload.dropbox, "Only 1 file may be uploaded")
+                    return
+                }
+                // Validate the file
+                if (!files[0].name.endsWith(".odm")) {
+                    errorMessage(upload.dropbox, "Only '.odm' files may be uploaded")
+                    return
+                }
+                if (files[0].size > 9999) {
+                    errorMessage(upload.dropbox, "File exceeds size limit")
+                    return
+                }
+                document.getElementById("fileInput").files = files
                 upload.form.submit()
             });
         }

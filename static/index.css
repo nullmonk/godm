@@ -11,17 +11,18 @@
     align-items:center;
     justify-content:center;
     display: flex;
-}
-#dropbox.hover{
-    background: rgba(171, 212, 224, 0.747);
-}
-
-div.vertical {
     font-family: Helvetica, sans-serif;
     font-weight: bold;
     font-size: 2em;
     color: white;
     text-transform: uppercase;
+}
+
+#dropbox.error {
+    border-color: tomato;
+}
+#dropbox.hover{
+    background: rgba(171, 212, 224, 0.747);
 }
 
 body {
