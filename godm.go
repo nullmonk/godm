@@ -88,7 +88,7 @@ func (s *Server) Run() error {
 
 	//staticAssets := http.FileServer(http.Dir("static/"))
 	//routes.Handle("/static/", http.StripPrefix("/static/", staticAssets))
-	routes.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(Files))))
+	routes.Handle("/static/", http.FileServer(http.FS(Files)))
 	routes.HandleFunc("/", s.index)
 	routes.HandleFunc("/upload", s.upload)
 
