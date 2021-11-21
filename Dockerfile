@@ -3,12 +3,12 @@ FROM golang:alpine
 RUN apk update && apk add git
 #RUN git clone https://github.com/micahjmartin/godm.git /app
 WORKDIR /app
-COPY go.* .
+COPY go.mod go.sum ./
 RUN go mod tidy
 
 COPY static .
 COPY cmd .
-COPY *.go .
+COPY *.go ./
 COPY index.html .
 
 RUN go build cmd/godm.go
