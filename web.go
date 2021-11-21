@@ -70,7 +70,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	os.Rename(outfile, hash+".odm")
-	http.Redirect(w, r, "/status?id="+hash, http.StatusTemporaryRedirect)
+	http.Redirect(w, r, s.Prefix+"/status?id="+hash, http.StatusTemporaryRedirect)
 }
 
 func logRequest(handler http.Handler) http.Handler {
