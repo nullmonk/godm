@@ -3,6 +3,8 @@ FROM golang:alpine
 RUN apk update && apk add git
 WORKDIR /app
 COPY go.mod go.sum ./
+RUN go mod download
+
 COPY static/ static/
 COPY cmd/ cmd/
 COPY *.go ./
