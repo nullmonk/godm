@@ -19,9 +19,10 @@ var index string
 var Templates = template.Must(template.New("").Parse(index))
 
 type App struct {
-	Download Download `cmd help:"Download the ODM file contents"`
-	Return   Return   `cmd help:"Return the ODM file"`
-	Server   Server   `cmd help:"Serve a website to automatically download books"`
+	Download Download      `cmd help:"Download the ODM file contents"`
+	Return   Return        `cmd help:"Return the ODM file"`
+	Server   Server        `cmd help:"Serve a website to automatically download books"`
+	Parse    ParseChapters `cmd help:"Split the different parts into the correct chapters"`
 }
 
 type Download struct {
