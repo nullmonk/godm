@@ -172,7 +172,10 @@ func (p *ParseChapters) Run() error {
 				}
 				if i != 0 {
 					// Add the end time to the previous marker
-					p.allMarkers[i-1].EndTime = m.Time
+					prev := p.allMarkers[i-1]
+					if prev.Source == m.Source {
+						prev.EndTime = m.Time
+					}
 				}
 				p.allMarkers = append(p.allMarkers, m)
 			}

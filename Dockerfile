@@ -1,6 +1,7 @@
 FROM golang:alpine
 
-RUN apk update && apk add git
+RUN apk update && apk add git build-base ffmpeg
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
