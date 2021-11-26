@@ -19,15 +19,17 @@ var index string
 var Templates = template.Must(template.New("").Parse(index))
 
 type App struct {
-	Download Download `cmd help:"Download the ODM file contents"`
-	Return   Return   `cmd help:"Return the ODM file"`
-	Server   Server   `cmd help:"Serve a website to automatically download books"`
+	Download Download      `cmd help:"Download the ODM file contents"`
+	Return   Return        `cmd help:"Return the ODM file"`
+	Server   Server        `cmd help:"Serve a website to automatically download books"`
+	Parse    ParseChapters `cmd help:"Split the different parts into the correct chapters"`
 }
 
 type Download struct {
-	Odm    string `arg help:"ODM File to parse"`
-	Outdir string `arg help:"out directory to save files to"`
-	Return bool   `short:"r" help:"return the book when successfully downloaded"`
+	Odm     string `arg help:"ODM File to parse"`
+	Outdir  string `arg help:"out directory to save files to"`
+	Return  bool   `short:"r" help:"return the book when successfully downloaded"`
+	Verbose bool   `short:"v" help:"Print more information"`
 }
 
 func (d *Download) Run() error {
@@ -41,7 +43,7 @@ func (d *Download) Run() error {
 		return err
 	}
 	fmt.Println("Downloading all parts")
-	if err = odm.Download(d.Outdir, 10); err != nil {
+	if err = odm.Download(d.Outdir, 10, d.Verbose); err != nil {
 		return err
 	}
 	// TODO Validate the download worked
@@ -70,6 +72,7 @@ type Server struct {
 	Address string `short:"a" help:"Address to listen on (env GODM_ADDR)" default:":8080"`
 	Prefix  string `short:"p" help:"URL prefix to use (env GODM_PREFIX)"`
 	Outdir  string `arg help:"out directory to save files to (env GODM_OUTDIR)"`
+	Verbose bool   `short:"v" help:"Print more information"`
 }
 
 func (s *Server) Run() error {
@@ -87,13 +90,13 @@ func (s *Server) Run() error {
 		return fmt.Errorf("URL prefix does not begin with '/'")
 	}
 
-	routes := http.NewServeMux()
+	os.Mkdir("odms", 0755)
 
-	//staticAssets := http.FileServer(http.Dir("static/"))
-	//routes.Handle("/static/", http.StripPrefix("/static/", staticAssets))
+	routes := http.NewServeMux()
 	routes.Handle("/static/", http.FileServer(http.FS(Files)))
 	routes.HandleFunc("/", s.index)
 	routes.HandleFunc("/upload", s.upload)
+	routes.HandleFunc("/status", s.status)
 	lggr := logRequest(routes)
 	log.Println("Serving HTTP on", s.Address, "with prefix", s.Prefix, "saving to", s.Outdir)
 	if len(s.Prefix) != 0 {
@@ -110,7 +113,7 @@ type data struct {
 }
 
 /* Worker that downloads requests to a file */
-func worker(wg *sync.WaitGroup, c chan data, e chan error) {
+func worker(wg *sync.WaitGroup, c chan data, e chan error, verbose bool) {
 	defer wg.Done()
 	client := http.Client{}
 	for d := range c {
@@ -131,6 +134,9 @@ func worker(wg *sync.WaitGroup, c chan data, e chan error) {
 			e <- err
 			continue
 		}
-		client.Do(d.r)
+
+		if verbose {
+			log.Println("Saved file %s", d.f)
+		}
 	}
 }

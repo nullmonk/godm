@@ -1,3 +1,8 @@
 *.odm
-*.odm.license
+*.odm.*
 extract/
+*.mp3
+about.txt
+about.html
+folder.jpg
+*.zip

@@ -62,14 +62,16 @@ func (m Metadata) GetFolderName() string {
 	return strings.ReplaceAll(fmt.Sprintf("%s_%s", m.GetAuthor(), m.Title), " ", "")
 }
 
+type Part struct {
+	Number   string `xml:"number,attr"`
+	FileSize int    `xml:"filesize,attr"`
+	Name     string `xml:"name,attr"`
+	FileName string `xml:"filename,attr"`
+}
+
 type Parts struct {
 	Count int `xml:"count,attr"`
-	Part  []struct {
-		Number   string `xml:"number,attr"`
-		FileSize int    `xml:"filesize,attr"`
-		Name     string `xml:"name,attr"`
-		FileName string `xml:"filename,attr"`
-	}
+	Part  []Part
 }
 
 type Formats struct {
@@ -117,7 +119,10 @@ func NewODMFile(filename string) (*OverDriveMedia, error) {
 	odm := &OverDriveMedia{}
 	err = xml.Unmarshal([]byte(data), &odm)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid ODM file: %s", err)
+	}
+	if odm.Id == "" || odm.License.AcquisitionUrl == "" {
+		return nil, fmt.Errorf("invalid ODM file")
 	}
 	odm.data = data
 	odm.filename = filename
@@ -232,12 +237,56 @@ func (o *OverDriveMedia) chooseBestFormat() Format {
 }
 
 func (o *OverDriveMedia) Return() error {
-	_, err := http.Get(o.EarlyReturnURL)
+	resp, err := http.Get(o.EarlyReturnURL)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code mismatch %d != 200", resp.StatusCode)
+	}
+	io.Copy(os.Stdout, resp.Body)
+	fmt.Println()
 	return err
 }
 
+func (o *OverDriveMedia) DownloadPart(p Part, outfile string) error {
+	outf, err := os.Create(outfile)
+	if err != nil {
+		return err
+	}
+	license, err := o.GetLicense()
+	if err != nil {
+		return fmt.Errorf("could not get license")
+	}
+	format := o.chooseBestFormat()
+	url := o.getDownloadUrl(format)
+	if url == "" {
+		return fmt.Errorf("could not get download url")
+	}
+	r, err := http.NewRequest("GET", url+"/"+p.FileName, nil)
+	if err != nil {
+		return err
+	}
+	r.Header.Set("User-Agent", UserAgent)
+	r.Header.Set("ClientID", o.ClientID)
+	r.Header.Set("License", license)
+	client := http.Client{}
+	resp, err := client.Do(r)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("invalid status code received: %d", resp.StatusCode)
+	}
+	_, err = io.Copy(outf, resp.Body)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 /* Download all the parts */
-func (o *OverDriveMedia) Download(outdir string, threads int) error {
+func (o *OverDriveMedia) Download(outdir string, threads int, verbose bool) error {
 	// Make sure we have the license
 	license, err := o.GetLicense()
 	if err != nil {
@@ -259,7 +308,7 @@ func (o *OverDriveMedia) Download(outdir string, threads int) error {
 	errChan := make(chan error)
 	wg := &sync.WaitGroup{}
 	for i := 0; i < threads; i++ {
-		go worker(wg, dataChan, errChan)
+		go worker(wg, dataChan, errChan, verbose)
 		wg.Add(1)
 	}
 	f, err := os.Create(filepath.Join(outdir, o.filename))
