@@ -23,7 +23,7 @@ import (
 var TITLE_RE = regexp.MustCompile(`(\s+\(([0-9]+:)+[0-9]+\))$`)
 
 // Remove "Part N - " from the title
-var TITLE_RE_2 = regexp.MustCompile(`(\s*(Part)\s+\d(\s+\-\s+))`)
+//var TITLE_RE_2 = regexp.MustCompile(`(\s*(Part)\s+\d(\s+\-\s+))`)
 
 type Marker struct {
 	Name    string
@@ -38,7 +38,7 @@ func (m *Marker) String() string {
 
 func (m *Marker) NormalizeName() string {
 	m.Name = TITLE_RE.ReplaceAllString(m.Name, "")
-	m.Name = TITLE_RE_2.ReplaceAllString(m.Name, "")
+	//m.Name = TITLE_RE_2.ReplaceAllString(m.Name, "")
 	m.Name = strings.TrimSpace(m.Name)
 	m.Name = strings.ReplaceAll(m.Name, ".", "")
 	m.Name = strings.ReplaceAll(m.Name, "\"", "")
@@ -168,11 +168,11 @@ func (p *ParseChapters) Run() error {
 				m.NormalizeName()
 				m.Source = path
 				if err := m.NormalizeTime(); err != nil {
-					return err
+					fmt.Fprintf(p.logfile, "%+v ERR: Cannot normalize time for file %s: %s\n", time.Now(), path, err)
 				}
 				if i != 0 {
 					// Add the end time to the previous marker
-					prev := p.allMarkers[i-1]
+					prev := p.allMarkers[len(p.allMarkers)-1]
 					if prev.Source == m.Source {
 						prev.EndTime = m.Time
 					}
@@ -188,6 +188,7 @@ func (p *ParseChapters) Run() error {
 		return nil
 	})
 	if err != nil {
+		fmt.Fprintf(p.logfile, "%+v ERR: Walking directory: %s\n", time.Now(), err)
 		return err
 	}
 
