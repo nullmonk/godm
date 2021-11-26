@@ -229,7 +229,7 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 			b, _ := ioutil.ReadAll(resp.Body)
 			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", string(b))
 		}
-		outf, err := os.Create("folder.jpg")
+		outf, err := os.Create(filepath.Join(outdir, "folder.jpg"))
 		if err != nil {
 			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", err)
 		}
@@ -256,11 +256,26 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 	if count != len(o.chooseBestFormat().Parts.Part) {
 		logChan <- "ERR: Book validation failed. No returning. Please contact administrator"
 	} else {
-		logChan <- "Book successfully downloaded. Returning."
+		logChan <- "Book successfully downloaded. Returning book."
 	}
 	o.Return()
+
 	close(logChan)
 	wg2.Wait()
+	logf, err := os.OpenFile(o.filename+".log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		fmt.Println("Error opening logfile:", err)
+		return
+	}
+	parser := ParseChapters{
+		logfile:   logf,
+		Directory: outdir,
+		Delete:    true, // Compress the originals
+	}
+	if err = parser.Run(); err != nil {
+		fmt.Println("Error parsing:", err)
+		return
+	}
 }
 
 func logRequest(handler http.Handler) http.Handler {

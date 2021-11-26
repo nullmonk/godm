@@ -1,23 +1,35 @@
 package godm
 
 import (
+	"archive/zip"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"io/fs"
 	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mikkyang/id3-go"
+	v2 "github.com/mikkyang/id3-go/v2"
 )
+
+// Remove timestamps from the title as overdrive does this sometimes. e.g. Chapter 7 (00:00)
+var TITLE_RE = regexp.MustCompile(`(\s+\(([0-9]+:)+[0-9]+\))$`)
+
+// Remove "Part N - " from the title
+var TITLE_RE_2 = regexp.MustCompile(`(\s*(Part)\s+\d(\s+\-\s+))`)
 
 type Marker struct {
 	Name    string
 	Time    string
 	EndTime string
+	Source  string // Source filename
 }
 
 func (m *Marker) String() string {
@@ -25,11 +37,21 @@ func (m *Marker) String() string {
 }
 
 func (m *Marker) NormalizeName() string {
-	r := strings.ReplaceAll(m.Name, ".", "")
-	r = strings.ReplaceAll(r, "\"", "")
-	return strings.ReplaceAll(r, "'", "")
+	m.Name = TITLE_RE.ReplaceAllString(m.Name, "")
+	m.Name = TITLE_RE_2.ReplaceAllString(m.Name, "")
+	m.Name = strings.TrimSpace(m.Name)
+	m.Name = strings.ReplaceAll(m.Name, ".", "")
+	m.Name = strings.ReplaceAll(m.Name, "\"", "")
+	m.Name = strings.ReplaceAll(m.Name, "/", "-")
+	m.Name = strings.ReplaceAll(m.Name, "|", "-")
+	m.Name = strings.ReplaceAll(m.Name, "'", "")
+	m.Name = strings.ReplaceAll(m.Name, "?", "")
+	return m.Name
 }
 
+/*
+Normalize time markers for FFMPEG. Overdrive uses minutes > 60, splt these into hours
+*/
 func (m *Marker) NormalizeTime() (err error) {
 	var h, min int
 	var s float64
@@ -72,96 +94,38 @@ type Markers struct {
 	Markers []*Marker `xml:"Marker"`
 }
 
-type Audiobook struct {
-	// filename: Markers
-	Title       string
-	Description string
-	Markers     map[string][]*Marker
-	M3U         []string // The M3U file
-}
-
-func NewAudiobook() *Audiobook {
-	return &Audiobook{
-		Markers: make(map[string][]*Marker),
-		M3U:     make([]string, 0),
-	}
-}
-
-/* Check if a chapter is conitnued, or if it has the same name as another chapter
-If it does have the same name, add II
-*/
-func (a *Audiobook) IsContinued(marker *Marker) bool {
-	for j, title := range a.M3U {
-		if title == marker.Name {
-			// Chapter is carrying over from the last segment
-			if j == len(a.M3U)-1 {
-				return true
-			}
-			if strings.HasSuffix(title, "I") {
-				marker.Name = title + "I"
-			} else {
-				marker.Name += " II"
-			}
-		}
-	}
-	return false
-}
-
-func (a *Audiobook) Add(filename string, markers []*Marker) error {
-	if _, ok := a.Markers[filename]; ok {
-		return fmt.Errorf("file already added")
-	}
-
-	a.Markers[filename] = markers
-	for i, m := range markers {
-		if err := m.NormalizeTime(); err != nil {
-			return err
-		}
-		if i != 0 {
-			// Add the end time to the previous marker
-			markers[i-1].EndTime = m.Time
-		}
-		// Add the chapter to the m3u if it hasnt been repeated
-		if !a.IsContinued(m) {
-			a.M3U = append(a.M3U, m.Name)
-		}
-	}
-	return nil
-}
-
-func (a *Audiobook) FindChapterIndex(name string) int {
-	for i, marker := range a.M3U {
-		if marker == name {
-			return i
-		}
-	}
-	return -1
-}
-
 type ParseChapters struct {
 	Directory string `arg help:"directory to parse"`
 	Outdir    string `arg help:"out directory to save files to" optional:""`
-	Verbose   bool   `short:"v" help:"Print more information"`
 	Delete    bool   `short:"d" help:"Delete previous parts on success"`
 
-	book *Audiobook
+	logfile io.Writer
+
+	allMarkers []*Marker
 }
 
 func (p *ParseChapters) Run() error {
+	if p.logfile == nil {
+		p.logfile = os.Stdout
+	}
 	if p.Outdir == "" {
 		p.Outdir = p.Directory
 	} else {
 		os.MkdirAll(p.Outdir, 0755)
 	}
-	p.book = NewAudiobook()
-	var doesDescriptionExist bool
-	var description string
-	//doesAlbumCoverExists := false
+
+	p.allMarkers = make([]*Marker, 0)
+	// Generate a description for the book if needed
+	var author, categories, summary, description string
+
+	sourceFiles := make([]string, 0)
 	err := filepath.Walk(p.Directory, func(path string, info fs.FileInfo, err error) error {
 		switch filepath.Ext(info.Name()) {
 		case ".txt":
+			fallthrough
+		case ".html":
 			if info.Size() > 0 {
-				doesDescriptionExist = true
+				description = "default"
 			}
 			return nil
 		case ".mp3":
@@ -171,8 +135,12 @@ func (p *ParseChapters) Run() error {
 			}
 			defer f.Close()
 
-			// Get the overdirve media tags
-			media := strings.SplitN(f.Frame("TXXX").String(), ":", 2)
+			// Get the overdrive media tags
+			var v v2.Framer
+			if v = f.Frame("TXXX"); v == nil {
+				return nil
+			}
+			media := strings.SplitN(v.String(), ":", 2)
 			if len(media) < 1 {
 				return nil
 			}
@@ -184,24 +152,33 @@ func (p *ParseChapters) Run() error {
 				return err
 			}
 
-			for _, frame := range f.AllFrames() {
-				fmt.Println(frame.Id(), frame.String())
+			// set the title, author, for the description
+			if v := f.Frame("TPE1"); author == "" && v != nil && v.String() != "" {
+				author = v.String()
+			}
+			if v := f.Frame("TCON"); categories == "" && v != nil && v.String() != "" {
+				categories = v.String()
+			}
+			if v := f.Frame("COMM"); summary == "" && v != nil && v.String() != "" {
+				summary = strings.TrimSpace(strings.SplitN(v.String(), ":", 2)[1])
 			}
 
-			if p.book.Title == "" {
-				p.book.Title = f.Frame("TIT3").String()
-			}
-			p.book.Add(path, markers.Markers)
-			if description == "" {
-				desc := strings.SplitN(f.Frame("COMM").String(), ":", 2)
-				if len(desc) > 1 {
-					description = fmt.Sprintf("%s %s\n\n%s\n\n%s",
-						f.Frame("TIT3").String(),
-						f.Frame("TPE1").String(),
-						strings.TrimSpace(desc[1]),
-						f.Frame("TCON").String())
+			// Normalize the markers
+			for i, m := range markers.Markers {
+				m.NormalizeName()
+				m.Source = path
+				if err := m.NormalizeTime(); err != nil {
+					return err
 				}
+				if i != 0 {
+					// Add the end time to the previous marker
+					p.allMarkers[i-1].EndTime = m.Time
+				}
+				p.allMarkers = append(p.allMarkers, m)
 			}
+
+			sourceFiles = append(sourceFiles, path)
+
 		default:
 			return nil
 		}
@@ -210,43 +187,65 @@ func (p *ParseChapters) Run() error {
 	if err != nil {
 		return err
 	}
-	if !doesDescriptionExist && description != "" {
-		if err := ioutil.WriteFile(filepath.Join(p.Outdir, "Description.txt"), []byte(description), 0644); err != nil {
+
+	// Write the description if we dont have one
+	if description == "" && summary != "" {
+		description = fmt.Sprintf("%s<br><br>\n%s\n<br>\n%s", summary, author, categories)
+		if err := ioutil.WriteFile(filepath.Join(p.Outdir, "about.html"), []byte(description), 0644); err != nil {
+			return err
+		}
+		fmt.Fprintf(p.logfile, "%+v %s\n", time.Now(), "Saved description to about.txt")
+	}
+
+	// Print out all the markers
+	i := 0
+	// Format string used for output files, zeros padded as much as needed
+	formatStr := fmt.Sprintf("%%0%dd - %%s.mp3", len(fmt.Sprint(len(p.allMarkers))))
+	for _, marker := range p.allMarkers {
+		destination := filepath.Join(p.Outdir, fmt.Sprintf(formatStr, i, marker.Name))
+		if err := SplitMP3(marker.Source, destination, marker); err != nil {
+			fmt.Fprintf(p.logfile, "%+v ERR: Could not split file: %s\n", time.Now(), err)
+		}
+		fmt.Fprintf(p.logfile, "%+v Saved %d - %s\n", time.Now(), i, marker.Name)
+		i++
+	}
+
+	// Package the old Parts into a zipfile
+	if !p.Delete {
+		return nil
+	}
+	_, file := filepath.Split(strings.TrimRight(p.Directory, "/"))
+	file = filepath.Join(p.Outdir, "..", file+".zip")
+	of, err := os.Create(file) // Output zipfile
+	if err != nil {
+		fmt.Fprintf(p.logfile, "%+v ERR: Could not create output zipfile: %s: %s\n", time.Now(), file, err)
+		return err
+	}
+	defer of.Close()
+	zf := zip.NewWriter(of) // Output zip writer
+	defer zf.Close()
+	for _, sourceFile := range sourceFiles {
+		_, fname := filepath.Split(sourceFile)
+		f, err := zf.Create(fname)
+		if err != nil {
+			fmt.Fprintf(p.logfile, "%+v ERR: Could not create file in zipfile: %s: %s\n", time.Now(), fname, err)
+			return err
+		}
+		sf, err := os.Open(sourceFile)
+		if err != nil {
+			fmt.Fprintf(p.logfile, "%+v ERR: Could not read file: %s: %s\n", time.Now(), sourceFile, err)
+			return err
+		}
+		defer sf.Close()
+		if _, err := io.Copy(f, sf); err != nil {
+			fmt.Fprintf(p.logfile, "%+v ERR: Could not read file: %s: %s\n", time.Now(), sourceFile, err)
+			return err
+		}
+		if err := os.Remove(sourceFile); err != nil {
+			fmt.Fprintf(p.logfile, "%+v ERR: Could not delete file: %s: %s\n", time.Now(), sourceFile, err)
 			return err
 		}
 	}
-
-	var wasError error
-	for filename, markers := range p.book.Markers {
-		for _, marker := range markers {
-			destPrefix := filepath.Join(p.Outdir, fmt.Sprintf("%02d - %s", p.book.FindChapterIndex(marker.Name), marker.NormalizeName()))
-			destination := destPrefix + ".mp3"
-			i := 0
-			for {
-				if _, err := os.Stat(destination); err == nil {
-					i++
-					destination = fmt.Sprintf("%s_%d.mp3", destPrefix, i)
-				}
-				break
-			}
-			if err := SplitMP3(filename, destination, marker); err != nil {
-				wasError = err
-				fmt.Println(err)
-			}
-		}
-		if wasError == nil && p.Delete {
-			os.Remove(filename)
-		}
-		wasError = nil
-	}
+	fmt.Fprintf(p.logfile, "%+v Saved original files to %s\n", time.Now(), file)
 	return nil
-}
-
-func GetIndex(arr []string, name string) int {
-	for i, val := range arr {
-		if val == name {
-			return i
-		}
-	}
-	return -1
 }
