@@ -212,7 +212,31 @@ func (s *Server) DownloadForWeb(o *OverDriveMedia) {
 			p:       part,
 		}
 	}
-
+	albumArt := filepath.Join(outdir, "folder.jpg")
+	if i, err := os.Stat(albumArt); err == nil && i.Size() != 0 {
+		// Already have it
+	} else {
+		r, err := http.NewRequest("GET", md.CoverUrl, nil)
+		if err != nil {
+			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", err)
+		}
+		c := &http.Client{}
+		resp, err := c.Do(r)
+		if err != nil {
+			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := ioutil.ReadAll(resp.Body)
+			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", string(b))
+		}
+		outf, err := os.Create("folder.jpg")
+		if err != nil {
+			logChan <- fmt.Sprintf("ERR: Could not download album art: %s", err)
+		}
+		defer outf.Close()
+		io.Copy(outf, resp.Body)
+		logChan <- "Successfully Downloaded album Art"
+	}
 	close(dataChan)
 	wg.Wait()
 
