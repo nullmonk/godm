@@ -228,6 +228,7 @@ func (p *ParseChapters) Run() error {
 		for i, fname := range playlist {
 			destination := filepath.Join(p.Outdir, fmt.Sprintf(formatStr, i, fname))
 			os.Rename(filepath.Join(p.Directory, fname), destination)
+			fmt.Fprintf(p.logfile, "%+v Renamed %s\n", time.Now(), fname)
 		}
 		fmt.Fprintf(p.logfile, "%+v %s\n", time.Now(), "Renamed files")
 		return nil
