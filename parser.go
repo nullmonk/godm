@@ -2,6 +2,7 @@ package godm
 
 import (
 	"archive/zip"
+	"bufio"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -104,6 +105,27 @@ type ParseChapters struct {
 	allMarkers []*Marker
 }
 
+func (p *ParseChapters) parsePlaylist(filename string) ([]string, error) {
+	var files []string
+	fil, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(fil)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 || line[0] == '#' || strings.Contains(line, "EXTM3U") {
+			continue
+		}
+
+		files = append(files, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 func (p *ParseChapters) Run() error {
 	if p.logfile == nil {
 		p.logfile = os.Stdout
@@ -119,8 +141,14 @@ func (p *ParseChapters) Run() error {
 	var author, categories, summary, description string
 
 	sourceFiles := make([]string, 0)
+
+	var playlist []string
+
 	err := filepath.Walk(p.Directory, func(path string, info fs.FileInfo, err error) error {
 		switch filepath.Ext(info.Name()) {
+		case ".m3u":
+			playlist, err = p.parsePlaylist(path)
+			return err
 		case ".txt":
 			fallthrough
 		case ".html":
@@ -187,11 +215,23 @@ func (p *ParseChapters) Run() error {
 		}
 		return nil
 	})
+
 	if err != nil {
 		fmt.Fprintf(p.logfile, "%+v ERR: Walking directory: %s\n", time.Now(), err)
 		return err
 	}
 
+	if p.allMarkers != nil && len(p.allMarkers) == 0 && playlist != nil {
+		fmt.Fprintf(p.logfile, "%+v Detected Playlist File with no Overdrive Markers.\n", time.Now())
+		formatStr := fmt.Sprintf("%%0%dd - %%s.mp3", len(fmt.Sprint(len(p.allMarkers))))
+
+		for i, fname := range playlist {
+			destination := filepath.Join(p.Outdir, fmt.Sprintf(formatStr, i, fname))
+			os.Rename(filepath.Join(p.Directory, fname), destination)
+		}
+		fmt.Fprintf(p.logfile, "%+v %s\n", time.Now(), "Renamed files")
+		return nil
+	}
 	// Write the description if we dont have one
 	if description == "" && summary != "" {
 		description = fmt.Sprintf("%s<br><br>\n%s\n<br>\n%s", summary, author, categories)
@@ -199,6 +239,7 @@ func (p *ParseChapters) Run() error {
 			return err
 		}
 		fmt.Fprintf(p.logfile, "%+v %s\n", time.Now(), "Saved description to about.txt")
+
 	}
 
 	// Print out all the markers
