@@ -224,7 +224,7 @@ func (p *ParseChapters) Run() error {
 
 	if p.allMarkers != nil && len(p.allMarkers) == 0 && playlist != nil {
 		fmt.Fprintf(p.logfile, "%+v Detected Playlist File with no Overdrive Markers.\n", time.Now())
-		formatStr := fmt.Sprintf("%%0%dd - %%s", len(fmt.Sprint(len(p.allMarkers))))
+		formatStr := fmt.Sprintf("%%0%dd - %%s", len(fmt.Sprint(len(playlist))))
 
 		for i, fname := range playlist {
 			destination := filepath.Join(p.Outdir, fmt.Sprintf(formatStr, i, fname))
