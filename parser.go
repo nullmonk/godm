@@ -147,8 +147,9 @@ func (p *ParseChapters) Run() error {
 	err := filepath.Walk(p.Directory, func(path string, info fs.FileInfo, err error) error {
 		switch filepath.Ext(info.Name()) {
 		case ".m3u":
-			playlist, err = p.parsePlaylist(path)
-			return err
+			var err2 error
+			playlist, err2 = p.parsePlaylist(path)
+			return err2
 		case ".txt":
 			fallthrough
 		case ".html":
